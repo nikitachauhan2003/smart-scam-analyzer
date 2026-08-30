@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="description" content="Check suspicious messages for common scam warning signs.">
+	<title>Smart Scam Message Analyzer</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<div class="page-shell">
+		<header class="site-header">
+			<a class="brand" href="index.html" aria-label="Smart Scam Analyzer home">
+				<span class="brand-mark" aria-hidden="true">⌁</span>
+				<span>SMART SCAM<br><strong>ANALYZER</strong></span>
+			</a>
+			<div class="header-status"><span class="status-dot"></span>Private &amp; secure</div>
+		</header>
+
+		<main>
+			<section class="intro" aria-labelledby="page-title">
+				<p class="eyebrow">MESSAGE INTELLIGENCE <span>01</span></p>
+				<h1 id="page-title">Pause before<br><em>you respond.</em></h1>
+				<p class="intro-copy">Spot the warning signs hiding in suspicious messages. Paste one below and get a clear, practical read in seconds.</p>
+			</section>
+
+			<section class="analyzer-layout" aria-label="Message analyzer">
+				<div class="input-panel panel">
+					<div class="panel-heading">
+						<div>
+							<p class="section-label">01 / INPUT</p>
+							<h2>Drop in the message</h2>
+						</div>
+						<span class="format-note">SMS · CHAT · EMAIL</span>
+					</div>
+					<label class="sr-only" for="message-input">Suspicious message</label>
+					<textarea id="message-input" maxlength="3000" placeholder="Paste a suspicious SMS, WhatsApp message or email here..."></textarea>
+					<div class="input-footer">
+						<span id="character-count">0 / 3000</span>
+						<button class="clear-button" id="clear-button" type="button">Clear <span aria-hidden="true">↗</span></button>
+					</div>
+					<button class="analyze-button" id="analyze-button" type="button">
+						<span class="button-text">Analyze message</span>
+						<span class="button-arrow" aria-hidden="true">→</span>
+					</button>
+					<p class="helper-text"><span aria-hidden="true">●</span> Your message stays in this browser.</p>
+				</div>
+
+				<aside class="how-it-works panel">
+					<p class="section-label">HOW IT WORKS</p>
+					<ol>
+						<li><span>01</span><p><strong>Paste</strong><br>the message you received.</p></li>
+						<li><span>02</span><p><strong>Analyze</strong><br>common scam patterns.</p></li>
+						<li><span>03</span><p><strong>Act</strong><br>with confidence, not panic.</p></li>
+					</ol>
+					<div class="tip"><span aria-hidden="true">✦</span><p><strong>Remember</strong><br>Legitimate organizations won't rush you for passwords or payment.</p></div>
+				</aside>
+			</section>
+
+			<section class="result-section panel" id="result-section" aria-labelledby="result-title" aria-live="polite">
+				<div class="result-empty" id="empty-state">
+					<div class="empty-icon" aria-hidden="true">↘</div>
+					<div><p class="section-label">02 / RESULT</p><h2 id="result-title">Your analysis will appear here</h2><p>We'll look for urgency, unusual requests and other signs that deserve a closer look.</p></div>
+				</div>
+				<div class="loading-state" id="loading-state" hidden>
+					<span class="loader" aria-hidden="true"></span><p>Reading the message signals<span class="loading-dots">...</span></p>
+				</div>
+				<div class="result-content" id="result-content" hidden>
+					<div class="result-heading"><div><p class="section-label">02 / RESULT</p><h2 id="result-heading">Analysis complete</h2></div><span class="risk-badge" id="risk-badge">LOW RISK</span></div>
+					<div class="result-grid"><div><p class="subheading">WHY IT WAS FLAGGED</p><ul class="reasons-list" id="reasons-list"></ul></div><div class="recommendations"><p class="subheading">WHAT TO DO NEXT</p><p id="recommendation-text"></p></div></div>
+				</div>
+			</section>
+		</main>
+
+		<footer><span>SMART SCAM MESSAGE ANALYZER</span><span>Built for a safer inbox <b>✳</b></span></footer>
+	</div>
+	<script src="script.js"></script>
+</body>
+</html>
