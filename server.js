@@ -1,3 +1,4 @@
+const path = require('path');
 require('dotenv').config();
 
 const express = require('express');
@@ -16,6 +17,10 @@ const anthropic = new Anthropic({
 // Allow the frontend to call this API from another local origin.
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Google Web Risk API configuration
 const GOOGLE_WEB_RISK_API_KEY = process.env.API_KEY;
