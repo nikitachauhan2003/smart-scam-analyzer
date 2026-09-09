@@ -1,82 +1,319 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta name="description" content="Check suspicious messages for common scam warning signs.">
-	<title>Smart Scam Message Analyzer</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-	<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+    <title>Smart Scam Analyzer</title>
+
+    <link rel="stylesheet"
+        href="style.css">
+
+    <!-- Screenshot Library -->
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js">
+    </script>
 </head>
+
 <body>
-	<div class="page-shell">
-		<header class="site-header">
-			<a class="brand" href="index.html" aria-label="Smart Scam Analyzer home">
-				<span class="brand-mark" aria-hidden="true">⌁</span>
-				<span>SMART SCAM<br><strong>ANALYZER</strong></span>
-			</a>
-			<div class="header-status"><span class="status-dot"></span>Private &amp; secure</div>
-		</header>
 
-		<main>
-			<section class="intro" aria-labelledby="page-title">
-				<p class="eyebrow">MESSAGE INTELLIGENCE <span>01</span></p>
-				<h1 id="page-title">Pause before<br><em>you respond.</em></h1>
-				<p class="intro-copy">Spot the warning signs hiding in suspicious messages. Paste one below and get a clear, practical read in seconds.</p>
-			</section>
+    <main class="app">
 
-			<section class="analyzer-layout" aria-label="Message analyzer">
-				<div class="input-panel panel">
-					<div class="panel-heading">
-						<div>
-							<p class="section-label">01 / INPUT</p>
-							<h2>Drop in the message</h2>
-						</div>
-						<span class="format-note">SMS · CHAT · EMAIL</span>
-					</div>
-					<label class="sr-only" for="message-input">Suspicious message</label>
-					<textarea id="message-input" maxlength="3000" placeholder="Paste a suspicious SMS, WhatsApp message or email here..."></textarea>
-					<div class="input-footer">
-						<span id="character-count">0 / 3000</span>
-						<button class="clear-button" id=a"cler-button" type="button">Clear <span aria-hidden="true">↗</span></button>
-					</div>
-					<button class="analyze-button" id="analyze-button" type="button">
-						<span class="button-text">Analyze message</span>
-						<span class="button-arrow" aria-hidden="true">→</span>
-					</button>
-					<p class="helper-text"><span aria-hidden="true">●</span> Your message stays in this browser.</p>
-				</div>
+        <!-- HEADER -->
+        <header class="header">
 
-				<aside class="how-it-works panel">
-					<p class="section-label">HOW IT WORKS</p>
-					<ol>
-						<li><span>01</span><p><strong>Paste</strong><br>the message you received.</p></li>
-						<li><span>02</span><p><strong>Analyze</strong><br>common scam patterns.</p></li>
-						<li><span>03</span><p><strong>Act</strong><br>with confidence, not panic.</p></li>
-					</ol>
-					<div class="tip"><span aria-hidden="true">✦</span><p><strong>Remember</strong><br>Legitimate organizations won't rush you for passwords or payment.</p></div>
-				</aside>
-			</section>
+            <div>
+                <p class="eyebrow">
+                    AI SECURITY TOOL
+                </p>
 
-			<section class="result-section panel" id="result-section" aria-labelledby="result-title" aria-live="polite">
-				<div class="result-empty" id="empty-state">
-					<div class="empty-icon" aria-hidden="true">↘</div>
-					<div><p class="section-label">02 / RESULT</p><h2 id="result-title">Your analysis will appear here</h2><p>We'll look for urgency, unusual requests and other signs that deserve a closer look.</p></div>
-				</div>
-				<div class="loading-state" id="loading-state" hidden>
-					<span class="loader" aria-hidden="true"></span><p>Reading the message signals<span class="loading-dots">...</span></p>
-				</div>
-				<div class="result-content" id="result-content" hidden>
-					<div class="result-heading"><div><p class="section-label">02 / RESULT</p><h2 id="result-heading">Analysis complete</h2></div><span class="risk-badge" id="risk-badge">LOW RISK</span></div>
-					<div class="result-grid"><div><p class="subheading">WHY IT WAS FLAGGED</p><ul class="reasons-list" id="reasons-list"></ul></div><div class="recommendations"><p class="subheading">WHAT TO DO NEXT</p><p id="recommendation-text"></p></div></div>
-				</div>
-			</section>
-		</main>
+                <h1>
+                    Smart Scam Analyzer
+                </h1>
 
-		<footer><span>SMART SCAM MESSAGE ANALYZER</span><span>Built for a safer inbox <b>✳</b></span></footer>
-	</div>
-	<script src="script.js"></script>
+                <p class="subtitle">
+                    Analyze suspicious SMS, URLs, phone numbers
+                    and UPI IDs using AI and live security checks.
+                </p>
+            </div>
+
+        </header>
+
+
+        <!-- INPUT SECTION -->
+        <section class="panel">
+
+            <div class="section-title">
+                <h2>
+                    Analyze suspicious content
+                </h2>
+
+                <p>
+                    Paste a message, URL, phone number or UPI ID.
+                </p>
+            </div>
+
+
+            <!-- QUICK INPUTS -->
+            <div class="quick-inputs">
+
+                <button
+                    type="button"
+                    class="quick-btn"
+                    data-example="Congratulations! You have won ₹50,000. Send your OTP immediately to claim your prize.">
+                    📱 Scam SMS
+                </button>
+
+                <button
+                    type="button"
+                    class="quick-btn"
+                    data-example="https://example.com">
+                    🔗 URL
+                </button>
+
+                <button
+                    type="button"
+                    class="quick-btn"
+                    data-example="Please send ₹500 to winner@upi immediately to receive your reward.">
+                    💳 UPI
+                </button>
+
+                <button
+                    type="button"
+                    class="quick-btn"
+                    data-example="Call +91 9876543210 immediately to verify your bank account.">
+                    ☎️ Phone
+                </button>
+
+            </div>
+
+
+            <!-- TEXT INPUT -->
+            <label
+                for="message-input"
+                class="input-label">
+
+                Message / URL / Phone / UPI ID
+
+            </label>
+
+            <textarea
+                id="message-input"
+                class="message-input"
+                maxlength="5000"
+                placeholder="Example: Your bank account will be blocked. Verify your KYC immediately by clicking this link..."
+                rows="8"></textarea>
+
+
+            <!-- CHARACTER COUNT -->
+            <div class="input-footer">
+
+                <span id="character-count">
+                    0 / 5000
+                </span>
+
+                <span>
+                    🔒 No login required
+                </span>
+
+            </div>
+
+
+            <!-- BUTTONS -->
+            <div class="actions">
+
+                <button
+                    id="analyze-button"
+                    class="primary-button"
+                    type="button">
+
+                    🔍 Analyze Now
+
+                </button>
+
+
+                <button
+                    id="clear-button"
+                    class="clear-button"
+                    type="button">
+
+                    Clear
+
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- LOADING -->
+        <section
+            id="loading-state"
+            class="panel loading-state"
+            hidden>
+
+            <div class="loader"></div>
+
+            <h3>
+                Analyzing...
+            </h3>
+
+            <p>
+                Checking AI patterns, URLs, domains and
+                suspicious information.
+            </p>
+
+        </section>
+
+
+        <!-- RESULT -->
+        <section
+            id="result-section"
+            class="panel result-section"
+            hidden>
+
+            <div
+                id="result-content">
+
+                <!-- Result generated by script.js -->
+
+            </div>
+
+
+            <!-- SCREENSHOT -->
+            <div class="result-actions">
+
+                <button
+                    id="screenshot-button"
+                    class="secondary-button"
+                    type="button">
+
+                    📸 Save Result Screenshot
+
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- EMPTY STATE -->
+        <section
+            id="empty-state"
+            class="panel empty-state">
+
+            <div class="empty-icon">
+                🛡️
+            </div>
+
+            <h2>
+                Stay Safe Online
+            </h2>
+
+            <p>
+                Paste suspicious content above to check
+                whether it may be a scam.
+            </p>
+
+        </section>
+
+
+        <!-- FEATURES -->
+        <section class="features">
+
+            <div class="feature-card">
+
+                <div class="feature-icon">
+                    🤖
+                </div>
+
+                <h3>
+                    AI / NLP
+                </h3>
+
+                <p>
+                    Detects scam patterns and social engineering
+                    techniques.
+                </p>
+
+            </div>
+
+
+            <div class="feature-card">
+
+                <div class="feature-icon">
+                    🌐
+                </div>
+
+                <h3>
+                    Live URL Check
+                </h3>
+
+                <p>
+                    Checks suspicious URLs using a live
+                    security API.
+                </p>
+
+            </div>
+
+
+            <div class="feature-card">
+
+                <div class="feature-icon">
+                    📊
+                </div>
+
+                <h3>
+                    Risk Score
+                </h3>
+
+                <p>
+                    Generates a risk score from 0 to 100.
+                </p>
+
+            </div>
+
+
+            <div class="feature-card">
+
+                <div class="feature-icon">
+                    🔐
+                </div>
+
+                <h3>
+                    Privacy First
+                </h3>
+
+                <p>
+                    No login and no application database
+                    for storing searches.
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- DISCLAIMER -->
+        <footer class="footer">
+
+            <p>
+                ⚠️ Security analysis is advisory only.
+                Always verify suspicious messages through
+                official channels.
+            </p>
+
+        </footer>
+
+    </main>
+
+
+    <!-- FRONTEND JAVASCRIPT -->
+    <script src="script.js"></script>
+
 </body>
+
 </html>

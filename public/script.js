@@ -1,201 +1,402 @@
-const messageInput = document.getElementById('message-input');
-const characterCount = document.getElementById('character-count');
-const analyzeButton = document.getElementById('analyze-button');
-const clearButton = document.getElementById('clear-button');
-const emptyState = document.getElementById('empty-state');
-const loadingState = document.getElementById('loading-state');
-const resultContent = document.getElementById('result-content');
-const riskBadge = document.getElementById('risk-badge');
-const reasonsList = document.getElementById('reasons-list');
-const recommendationText = document.getElementById('recommendation-text');
+const messageInput = document.getElementById("message-input");
+const characterCount = document.getElementById("character-count");
+const analyzeButton = document.getElementById("analyze-button");
+const clearButton = document.getElementById("clear-button");
+const emptyState = document.getElementById("empty-state");
+const loadingState = document.getElementById("loading-state");
+const resultSection = document.getElementById("result-section");
+const resultContent = document.getElementById("result-content");
+const screenshotButton = document.getElementById("screenshot-button");
+const quickButtons = document.querySelectorAll(".quick-btn");
 
-const warningPatterns = [
-	{ pattern: /urgent|immediately|expires|act now|within \d+/i, reason: 'Uses urgency to pressure you into acting quickly.' },
-	{ pattern: /password|passcode|otp|one[- ]time|pin|verification code/i, reason: 'Requests a password, PIN, OTP or other sensitive code.' },
-	{ pattern: /pay|payment|fee|bank|credit card|gift card|crypto|bitcoin|transfer/i, reason: 'Mentions payment, banking details or money transfers.' },
-	{ pattern: /click|link|verify|confirm|login|http|www\./i, reason: 'Asks you to click a link or verify account details.' },
-	{ pattern: /won|winner|prize|reward|free|congratulations/i, reason: 'Uses an unexpected prize or reward as a hook.' }
-];
-
-messageInput.addEventListener('input', () => {
-	characterCount.textContent = `${messageInput.value.length} / 3000`;
+// Character Count
+messageInput.addEventListener("input", () => {
+    characterCount.textContent = `${messageInput.value.length} / 5000`;
 });
 
-analyzeButton.addEventListener('click', async () => {
-	const message = messageInput.value.trim();
-	
-	// Accept either message or URL
-	if (!message) {
-		messageInput.focus();
-		messageInput.style.borderColor = 'var(--danger)';
-		return;
-	}
-	
-	messageInput.style.borderColor = '';
-	emptyState.hidden = true;
-	resultContent.hidden = true;
-	loadingState.hidden = false;
-	
-	// Determine if input is a URL or message
-	const isURL = /^https?:\/\//.test(message);
-	
-	// Call the Node.js API
-	try {
-		const requestBody = isURL 
-			? { url: message }
-			: { message: message };
-		
-		console.log('[API Request] Sending to http://localhost:3000/api/analyze:', requestBody);
-		
-		const API_BASE_URL =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:3000'
-        : '';
-
-const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(requestBody)
-		});
-
-		console.log('[API Response] Status:', response.status, response.statusText);
-
-		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({ error: 'Unable to parse error response' }));
-			console.error('[API Error] Status', response.status, '- Details:', errorData);
-			throw new Error(`API Error: ${response.status} - ${errorData.error || 'Unknown error'}`);
-		}
-
-		const result = await response.json();
-		console.log('[API Success] Analysis result received:', result);
-		showAPIResult(result);
-	} catch (error) {
-		console.error('[API Fetch Error] Failed to connect:', error.message);
-		console.error('[API Fetch Error] Full error object:', error);
-		showErrorResult(error);
-	} finally {
-		// ALWAYS hide loading state when API request completes (success or error)
-		loadingState.hidden = true;
-	}
+// Quick Examples
+quickButtons.forEach(button => {
+    button.addEventListener("click", () => {
+        const example = button.dataset.example;
+        messageInput.value = example;
+        characterCount.textContent = `${example.length} / 5000`;
+        messageInput.focus();
+    });
 });
 
-function showAPIResult(result) {
-	// Display results from the Node.js API (with external API threat data)
-	const { riskLevel, riskScore, detectedKeywords, explanation, safetyTips, externalThreatData, urlsChecked, detectedThreats } = result;
-	
-	// Update risk badge
-	riskBadge.textContent = `${riskLevel.toUpperCase()} RISK`;
-	riskBadge.className = `risk-badge ${riskLevel.toLowerCase()}`;
-	
-	// Build detailed reasons content
-	let reasonsHTML = '';
-	
-	// Show risk score
-	reasonsHTML += `<li><strong>Risk Score:</strong> ${riskScore}/100</li>`;
-	
-	// Show analysis/explanation
-	if (explanation) {
-		reasonsHTML += `<li><strong>Analysis:</strong> ${explanation}</li>`;
-	}
-	
-	// Show detected threats from Google Web Risk API
-	if (detectedThreats && detectedThreats.length > 0) {
-		reasonsHTML += '<li style="background-color: #ffe0e0; padding: 10px; border-radius: 4px; margin-bottom: 10px;"><strong style="color: #d32f2f;">🔴 SECURITY THREATS DETECTED</strong><ul>';
-		for (const threat of detectedThreats) {
-			reasonsHTML += `<li><strong>${threat.url}</strong><br>Threat Type: ${threat.threatType}</li>`;
-		}
-		reasonsHTML += '</ul></li>';
-	} else if (externalThreatData && externalThreatData.length > 0) {
-		// Fallback for old response format
-		reasonsHTML += '<li style="background-color: #ffe0e0; padding: 10px; border-radius: 4px; margin-bottom: 10px;"><strong style="color: #d32f2f;">🔴 EXTERNAL THREAT DETECTED</strong><ul>';
-		for (const threatItem of externalThreatData) {
-			reasonsHTML += `<li><strong>URL:</strong> ${threatItem.url}</li>`;
-			if (threatItem.threats && threatItem.threats.length > 0) {
-				for (const threat of threatItem.threats) {
-					reasonsHTML += `<li>Threat: ${threat.threatType || 'Unknown'}</li>`;
-				}
-			}
-		}
-		reasonsHTML += '</ul></li>';
-	}
-	
-	// Show detected keywords if present
-	if (detectedKeywords && detectedKeywords.length > 0) {
-		reasonsHTML += `<li><strong>Detected Scam Keywords:</strong> ${detectedKeywords.join(', ')}</li>`;
-	}
-	
-	// If nothing was detected, show safe message
-	if (!detectedThreats || detectedThreats.length === 0) {
-		if (!detectedKeywords || detectedKeywords.length === 0) {
-			if (!externalThreatData || externalThreatData.length === 0) {
-				reasonsHTML += '<li>No known security threat detected.</li>';
-			}
-		}
-	}
-	
-	reasonsList.innerHTML = reasonsHTML;
-	
-	// Display safety tips
-	if (safetyTips && safetyTips.length > 0) {
-		const tipsContent = safetyTips.map((tip) => `<li>${tip}</li>`).join('');
-		recommendationText.innerHTML = `<strong>Safety Tips:</strong><ul style="margin-top: 10px; padding-left: 20px;">${tipsContent}</ul>`;
-	} else {
-		recommendationText.innerHTML = '<strong>Safety Tips:</strong><ul style="margin-top: 10px; padding-left: 20px;"><li>Always verify the sender independently before responding.</li><li>Never share personal or financial information via unsolicited messages.</li></ul>';
-	}
-	
-	resultContent.hidden = false;
+// Escape HTML
+function escapeHTML(value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
-function showErrorResult(error) {
-	// Handle API errors with detailed logging
-	console.error('[Error Handler] Error message:', error.message);
-	console.error('[Error Handler] Full error stack:', error.stack);
-	
-	riskBadge.textContent = 'ERROR';
-	riskBadge.className = 'risk-badge error';
-	reasonsList.innerHTML = `
-		<li><strong>Failed to connect to API server</strong></li>
-		<li>Error: ${error.message}</li>
-		<li><strong>Troubleshooting:</strong>
-			<ul>
-				<li>1. Check that server is running: npm start</li>
-				<li>2. Verify server is on http://localhost:3000</li>
-				<li>3. Open browser console (F12) to see detailed error logs above</li>
-				<li>4. Check if port 3000 is in use by another process</li>
-			</ul>
-		</li>
-	`;
-	recommendationText.innerHTML = '<strong>Next steps:</strong> Ensure API server is running and try again.';
-	
-	resultContent.hidden = false;
+// Risk Class
+function getRiskClass(level) {
+    const risk = String(level || "").toLowerCase();
+    if (risk === "high") return "risk-high";
+    if (risk === "medium") return "risk-medium";
+    return "risk-low";
 }
 
-function showResult(message) {
-	const matches = warningPatterns.filter(({ pattern }) => pattern.test(message));
-	const risk = matches.length >= 3 ? 'HIGH' : matches.length >= 1 ? 'MEDIUM' : 'LOW';
-	const reasons = matches.length ? matches.map(({ reason }) => reason) : ['No common scam signals were found in this message.'];
-	const recommendation = risk === 'HIGH'
-		? 'Do not reply, click links or send money. Contact the organization through a trusted website or phone number, then report and delete the message.'
-		: risk === 'MEDIUM'
-			? 'Pause before responding. Verify the sender independently and avoid sharing personal details or opening links until you are certain.'
-			: 'Still use your judgment. Check the sender and context independently before sharing information or taking action.';
-	riskBadge.textContent = `${risk} RISK`;
-	riskBadge.className = `risk-badge ${risk.toLowerCase()}`;
-	reasonsList.innerHTML = reasons.map((reason) => `<li>${reason}</li>`).join('');
-	recommendationText.textContent = recommendation;
-	loadingState.hidden = true;
-	resultContent.hidden = false;
+// Score Label
+function getScoreLabel(score) {
+    if (score >= 70) return "High Risk";
+    if (score >= 40) return "Medium Risk";
+    return "Low Risk";
 }
 
-clearButton.addEventListener('click', () => {
-	messageInput.value = '';
-	characterCount.textContent = '0 / 3000';
-	messageInput.style.borderColor = '';
-	loadingState.hidden = true;
-	resultContent.hidden = true;
-	emptyState.hidden = false;
-	messageInput.focus();
+// List Helper
+function makeList(items, emptyText = "None detected") {
+    if (!Array.isArray(items) || !items.length)
+        return `<li>${escapeHTML(emptyText)}</li>`;
+
+    return items.map(item => {
+        if (typeof item === "object" && item !== null)
+            return `<li>${escapeHTML(JSON.stringify(item))}</li>`;
+        return `<li>${escapeHTML(item)}</li>`;
+    }).join("");
+}
+
+// Domain Information
+function renderDomainInfo(urlResults) {
+    if (!Array.isArray(urlResults) || !urlResults.length) {
+        return `
+            <div class="info-card">
+                <span class="info-icon">🌐</span>
+                <div>
+                    <strong>Domain Age</strong>
+                    <p>No domain information available</p>
+                </div>
+            </div>`;
+    }
+
+    return urlResults.map(item => {
+        const domain = item.domain || "Unknown";
+        const ageData = item.domainAge;
+        let ageText = "Unknown";
+        let registeredText = "Unknown";
+
+        if (ageData) {
+            if (typeof ageData === "object") {
+                if (ageData.ageYears !== undefined)
+                    ageText = `${ageData.ageYears} years`;
+                else if (ageData.ageDays !== undefined)
+                    ageText = `${ageData.ageDays} days`;
+
+                if (ageData.registrationDate)
+                    registeredText = new Date(
+                        ageData.registrationDate
+                    ).toLocaleDateString();
+            } else {
+                ageText = String(ageData);
+            }
+        }
+
+        return `
+            <div class="info-card">
+                <span class="info-icon">🌐</span>
+                <div>
+                    <strong>${escapeHTML(domain)}</strong>
+                    <p>Domain Age: <b>${escapeHTML(ageText)}</b></p>
+                    <p>Registered: ${escapeHTML(registeredText)}</p>
+                </div>
+            </div>`;
+    }).join("");
+}
+
+// URL Results
+function getURLList(urlResults) {
+    if (!Array.isArray(urlResults) || !urlResults.length) return [];
+
+    return urlResults.map(item =>
+        item.safe
+            ? `${item.url} — No known threat`
+            : `${item.url} — Threat detected`
+    );
+}
+
+// Render Result
+function renderResult(data) {
+    const score = Number(data.riskScore || 0);
+    const level = data.riskLevel || getScoreLabel(score);
+    const riskClass = getRiskClass(level);
+    const scoreAngle = Math.min(Math.max(score, 0), 100) * 1.8;
+
+    const detected = data.detected || {};
+    const phoneNumbers = detected.phoneNumbers || [];
+    const upiIds = detected.upiIds || [];
+    const urls = detected.urls || [];
+    const urlResults = data.urlResults || [];
+
+    // Hugging Face AI
+    const hf = data.huggingFace || {};
+
+    const detectedThreats = urlResults.flatMap(item =>
+        Array.isArray(item.threats) ? item.threats : []
+    );
+
+    const detectedKeywords = data.redFlags || [];
+    const safetyTips = data.recommendations || [];
+    const urlsChecked = getURLList(urlResults);
+
+    resultContent.innerHTML = `
+
+        <div class="result-header">
+            <div>
+                <p class="eyebrow">ANALYSIS RESULT</p>
+                <h2>Scam Risk Assessment</h2>
+            </div>
+            <div class="risk-badge ${riskClass}">
+                ${escapeHTML(level)}
+            </div>
+        </div>
+
+        <div class="score-section">
+            <div class="score-circle"
+                 style="--score-angle:${scoreAngle}deg">
+                <div class="score-inner">
+                    <strong>${score}</strong>
+                    <span>/ 100</span>
+                </div>
+            </div>
+
+            <div class="score-details">
+                <h3>${escapeHTML(getScoreLabel(score))}</h3>
+                <p>Risk Score: <strong>${score}/100</strong></p>
+                <p>
+                    ${
+                        score >= 70
+                            ? "This content contains strong scam indicators. Be very careful."
+                            : score >= 40
+                            ? "This content contains some suspicious indicators. Verify before taking action."
+                            : "No major scam indicators were detected, but always stay cautious."
+                    }
+                </p>
+            </div>
+        </div>
+
+        <div class="result-grid">
+
+            <div class="result-card">
+                <h3>📱 Phone Numbers</h3>
+                <ul>
+                    ${makeList(phoneNumbers, "No phone number detected")}
+                </ul>
+            </div>
+
+            <div class="result-card">
+                <h3>💳 UPI IDs</h3>
+                <ul>
+                    ${makeList(upiIds, "No UPI ID detected")}
+                </ul>
+            </div>
+
+            <div class="result-card">
+                <h3>⚠️ Threats</h3>
+                <ul>
+                    ${makeList(detectedThreats, "No live threats detected")}
+                </ul>
+            </div>
+
+            <div class="result-card">
+                <h3>🔗 URLs Checked</h3>
+                <ul>
+                    ${makeList(urlsChecked, "No URL detected")}
+                </ul>
+            </div>
+
+        </div>
+
+        <div class="result-block">
+            <h3>🌐 Domain Information</h3>
+            <div class="info-grid">
+                ${renderDomainInfo(urlResults)}
+            </div>
+        </div>
+
+        <div class="result-block">
+            <h3>🔎 Suspicious Keywords</h3>
+            <ul class="result-list">
+                ${makeList(
+                    detectedKeywords,
+                    "No suspicious keywords detected"
+                )}
+            </ul>
+        </div>
+
+        <!-- HUGGING FACE AI -->
+        <div class="result-block">
+            <h3>🤗 Hugging Face AI Analysis</h3>
+            <ul class="result-list">
+                <li>
+                    Status:
+                    <strong>
+                        ${hf.enabled ? "Active ✅" : "Not Active ⚠️"}
+                    </strong>
+                </li>
+
+                ${
+                    hf.enabled
+                        ? `
+                    <li>
+                        Model:
+                        <strong>${escapeHTML(hf.model)}</strong>
+                    </li>
+                    <li>
+                        Prediction:
+                        <strong>${escapeHTML(hf.label)}</strong>
+                    </li>
+                    <li>
+                        Confidence:
+                        <strong>${escapeHTML(hf.confidencePercent)}%</strong>
+                    </li>
+                    <li>
+                        AI Risk Score:
+                        <strong>${escapeHTML(hf.riskScore)}/100</strong>
+                    </li>`
+                        : `
+                    <li>Hugging Face model is not configured.</li>`
+                }
+            </ul>
+        </div>
+
+        <div class="explanation-box">
+            <h3>💡 Why is this risky?</h3>
+            <p>
+                ${escapeHTML(
+                    data.reason || "No detailed explanation available."
+                )}
+            </p>
+        </div>
+
+        <div class="safety-box">
+            <h3>🛡️ Safety Recommendations</h3>
+            <ul class="result-list">
+                ${makeList(
+                    safetyTips,
+                    "Do not share OTP, password or banking information."
+                )}
+            </ul>
+        </div>
+
+        <div class="result-block">
+            <h3>🔍 Detection Summary</h3>
+            <ul class="result-list">
+                <li>URLs detected: <strong>${urls.length}</strong></li>
+                <li>Phone numbers detected: <strong>${phoneNumbers.length}</strong></li>
+                <li>UPI IDs detected: <strong>${upiIds.length}</strong></li>
+            </ul>
+        </div>
+
+        <div class="analysis-footer">
+            <span>
+                🤖 AI Enhanced:
+                <strong>${data.aiEnhanced ? "Yes" : "Fallback"}</strong>
+            </span>
+            <span>
+                🔐 ${escapeHTML(
+                    data.privacy || "No database storage"
+                )}
+            </span>
+        </div>
+    `;
+
+    emptyState.hidden = true;
+    loadingState.hidden = true;
+    resultSection.hidden = false;
+
+    resultSection.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
+}
+
+// Analyze Button
+analyzeButton.addEventListener("click", async () => {
+    const message = messageInput.value.trim();
+
+    if (!message) {
+        alert("Please enter a URL, phone number, UPI ID or SMS message.");
+        messageInput.focus();
+        return;
+    }
+
+    analyzeButton.disabled = true;
+    emptyState.hidden = true;
+    resultSection.hidden = true;
+    loadingState.hidden = false;
+
+    try {
+        const response = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok)
+            throw new Error(data.error || "Analysis failed");
+
+        console.log("API RESPONSE:", data);
+        renderResult(data);
+
+    } catch (error) {
+        console.error("Analysis Error:", error);
+
+        loadingState.hidden = true;
+
+        resultContent.innerHTML = `
+            <div class="error-box">
+                <h3>❌ Analysis Failed</h3>
+                <p>${escapeHTML(error.message)}</p>
+                <p>Please make sure your server is running.</p>
+            </div>`;
+
+        resultSection.hidden = false;
+
+    } finally {
+        analyzeButton.disabled = false;
+    }
+});
+
+// Clear Button
+clearButton.addEventListener("click", () => {
+    messageInput.value = "";
+    characterCount.textContent = "0 / 5000";
+    resultContent.innerHTML = "";
+    resultSection.hidden = true;
+    loadingState.hidden = true;
+    emptyState.hidden = false;
+    messageInput.focus();
+});
+
+// Screenshot
+screenshotButton.addEventListener("click", async () => {
+    if (typeof html2canvas === "undefined") {
+        alert("Screenshot library is not loaded.");
+        return;
+    }
+
+    try {
+        const canvas = await html2canvas(resultSection, {
+            backgroundColor: null,
+            scale: 2,
+            useCORS: true
+        });
+
+        const link = document.createElement("a");
+        link.download = "smart-scam-analysis.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+
+    } catch (error) {
+        console.error("Screenshot error:", error);
+        alert("Unable to create screenshot.");
+    }
 });

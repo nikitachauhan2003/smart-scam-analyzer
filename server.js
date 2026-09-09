@@ -5,311 +5,1075 @@ const express = require('express');
 const cors = require('cors');
 const https = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
+const { InferenceClient } = require('@huggingface/inference');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Anthropic client
+// =====================================================
+// ANTHROPIC AI
+// =====================================================
+
 const anthropic = new Anthropic({
-	apiKey: process.env.ANTHROPIC_API_KEY
+    apiKey: process.env.ANTHROPIC_API_KEY
 });
 
-// Allow the frontend to call this API from another local origin.
+// =====================================================
+// HUGGING FACE AI
+// =====================================================
+
+const hfClient = process.env.HF_TOKEN
+    ? new InferenceClient(process.env.HF_TOKEN)
+    : null;
+
+// Phishing / scam text classification model
+const HF_MODEL =
+    'ealvaradob/bert-finetuned-phishing';
+
+// =====================================================
+// MIDDLEWARE
+// =====================================================
+
 app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
-// Google Web Risk API configuration
-const GOOGLE_WEB_RISK_API_KEY = process.env.API_KEY;
-const GOOGLE_WEB_RISK_ENDPOINT = 'https://webrisk.googleapis.com/v1/uris:search';
+app.use(
+    express.json({
+        limit: '100kb'
+    })
+);
 
-// Extract URLs from text
+app.use(
+    express.static(
+        path.join(__dirname, 'public')
+    )
+);
+
+// =====================================================
+// GOOGLE WEB RISK API
+// =====================================================
+
+const GOOGLE_WEB_RISK_API_KEY =
+    process.env.API_KEY;
+
+const GOOGLE_WEB_RISK_ENDPOINT =
+    'https://webrisk.googleapis.com/v1/uris:search';
+
+// =====================================================
+// EXTRACT URLS
+// =====================================================
+
 function extractURLs(text) {
-	const urlPattern = /(https?:\/\/[^\s]+)/gi;
-	const matches = text.match(urlPattern) || [];
-	return [...new Set(matches)]; // Remove duplicates
+
+    const regex =
+        /https?:\/\/[^\s]+/gi;
+
+    return text.match(regex) || [];
 }
 
-// Call Google Web Risk API to check URL safety
-async function checkURLSafety(url) {
-	return new Promise((resolve, reject) => {
-		const threatTypes = ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'];
-		const queryParams = new URLSearchParams({
-			uri: url,
-			threatTypes: threatTypes.join(','),
-			key: GOOGLE_WEB_RISK_API_KEY
-		});
+// =====================================================
+// EXTRACT PHONE NUMBERS
+// =====================================================
 
-		const fullUrl = `${GOOGLE_WEB_RISK_ENDPOINT}?${queryParams.toString()}`;
+function extractPhoneNumbers(text) {
 
-		https.get(fullUrl, (res) => {
-			let data = '';
-			res.on('data', (chunk) => { data += chunk; });
-			res.on('end', () => {
-				try {
-					const result = JSON.parse(data);
-					console.log(`[Google Web Risk API] Response for URL ${url}:`, JSON.stringify(result, null, 2));
-					resolve(result);
-				} catch (error) {
-					console.error(`[Google Web Risk API] Failed to parse response for ${url}:`, error.message);
-					reject(new Error('Failed to parse API response'));
-				}
-			});
-		}).on('error', (error) => {
-			console.error(`[Google Web Risk API] Request failed for ${url}:`, error.message);
-			reject(new Error(`API call failed: ${error.message}`));
-		});
-	});
+    const regex =
+        /(?:\+91[\s-]?)?[6-9]\d{9}\b/g;
+
+    return text.match(regex) || [];
 }
 
-// AI-powered analysis using Anthropic Claude
-async function analyzeWithAI(message, detectedThreatsInfo) {
-	try {
-		console.log('[Claude AI] Starting AI analysis for message...');
-		
-		// Build context with detected threats
-		let threatContext = '';
-		if (detectedThreatsInfo && detectedThreatsInfo.length > 0) {
-			threatContext = `\n\nExternal Security Check Results:\n`;
-			detectedThreatsInfo.forEach(threat => {
-				threatContext += `- URL: ${threat.url}\n  Threat Type: ${threat.threatType}\n`;
-			});
-		}
+// =====================================================
+// EXTRACT UPI IDs
+// =====================================================
 
-		// Create prompt for Claude
-		const analysisPrompt = `You are a security expert analyzing suspicious messages for scam indicators. Analyze the following message and provide a detailed security assessment.
+function extractUPIIds(text) {
 
-Message to analyze:
-"${message}"
-${threatContext}
+    const regex =
+        /\b[a-zA-Z0-9._-]{2,}@[a-zA-Z]{2,}\b/g;
 
-Provide your analysis in the following JSON format (output ONLY valid JSON, no other text):
+    return text.match(regex) || [];
+}
+
+// =====================================================
+// GET DOMAIN
+// =====================================================
+
+function getDomainFromURL(url) {
+
+    try {
+
+        return new URL(url).hostname;
+
+    } catch (error) {
+
+        return null;
+    }
+}
+
+// =====================================================
+// DOMAIN AGE USING RDAP
+// =====================================================
+
+function getDomainAge(domain) {
+
+    return new Promise((resolve) => {
+
+        if (!domain) {
+
+            resolve(null);
+
+            return;
+        }
+
+        const url =
+            `https://rdap.org/domain/${encodeURIComponent(domain)}`;
+
+        https.get(url, (res) => {
+
+            let data = '';
+
+            res.on('data', chunk => {
+
+                data += chunk;
+
+            });
+
+            res.on('end', () => {
+
+                try {
+
+                    const result =
+                        JSON.parse(data);
+
+                    const events =
+                        result.events || [];
+
+                    const registrationEvent =
+                        events.find(
+                            event =>
+                                event.eventAction ===
+                                'registration'
+                        );
+
+                    if (!registrationEvent) {
+
+                        resolve(null);
+
+                        return;
+                    }
+
+                    const registrationDate =
+                        new Date(
+                            registrationEvent.eventDate
+                        );
+
+                    const now =
+                        new Date();
+
+                    const ageDays =
+                        Math.floor(
+                            (now - registrationDate) /
+                            (1000 * 60 * 60 * 24)
+                        );
+
+                    const ageYears =
+                        Math.floor(
+                            ageDays / 365
+                        );
+
+                    resolve({
+
+                        registrationDate:
+                            registrationDate.toISOString(),
+
+                        ageDays,
+
+                        ageYears
+
+                    });
+
+                } catch (error) {
+
+                    resolve(null);
+                }
+            });
+
+        }).on('error', () => {
+
+            resolve(null);
+
+        });
+    });
+}
+
+// =====================================================
+// GOOGLE WEB RISK CHECK
+// =====================================================
+
+function checkURLSafety(url) {
+
+    return new Promise((resolve) => {
+
+        if (!GOOGLE_WEB_RISK_API_KEY) {
+
+            resolve({
+
+                safe: true,
+
+                checked: false,
+
+                threats: []
+
+            });
+
+            return;
+        }
+
+        const apiURL =
+            `${GOOGLE_WEB_RISK_ENDPOINT}` +
+            `?key=${encodeURIComponent(
+                GOOGLE_WEB_RISK_API_KEY
+            )}` +
+            `&uri=${encodeURIComponent(url)}` +
+            `&threatTypes=MALWARE` +
+            `&threatTypes=SOCIAL_ENGINEERING`;
+
+        https.get(apiURL, (res) => {
+
+            let data = '';
+
+            res.on('data', chunk => {
+
+                data += chunk;
+
+            });
+
+            res.on('end', () => {
+
+                try {
+
+                    const result =
+                        JSON.parse(data);
+
+                    const threats =
+                        result.threat ||
+                        result.threatTypes ||
+                        [];
+
+                    resolve({
+
+                        safe:
+                            threats.length === 0,
+
+                        checked: true,
+
+                        threats
+
+                    });
+
+                } catch (error) {
+
+                    resolve({
+
+                        safe: true,
+
+                        checked: false,
+
+                        threats: []
+
+                    });
+                }
+            });
+
+        }).on('error', () => {
+
+            resolve({
+
+                safe: true,
+
+                checked: false,
+
+                threats: []
+
+            });
+        });
+    });
+}
+
+// =====================================================
+// HUGGING FACE AI ANALYSIS
+// =====================================================
+
+async function analyzeWithHuggingFace(message) {
+
+    // No token = fallback
+    if (!hfClient) {
+
+        return {
+
+            enabled: false,
+
+            label: null,
+
+            confidence: 0,
+
+            riskScore: 0
+
+        };
+    }
+
+    try {
+
+        const result =
+            await hfClient.textClassification({
+
+                model: HF_MODEL,
+
+                inputs: message
+
+            });
+
+        /*
+          Depending on the model/provider,
+          output can be an array like:
+
+          [
+            {
+              label: "phishing",
+              score: 0.98
+            }
+          ]
+
+          or nested arrays.
+        */
+
+        let predictions = result;
+
+        if (
+            Array.isArray(result) &&
+            Array.isArray(result[0])
+        ) {
+
+            predictions = result[0];
+        }
+
+        if (
+            !Array.isArray(predictions) ||
+            predictions.length === 0
+        ) {
+
+            return {
+
+                enabled: false,
+
+                label: null,
+
+                confidence: 0,
+
+                riskScore: 0
+
+            };
+        }
+
+        // Highest confidence prediction
+        const bestPrediction =
+            [...predictions].sort(
+                (a, b) =>
+                    Number(b.score || 0) -
+                    Number(a.score || 0)
+            )[0];
+
+        const label =
+            String(
+                bestPrediction.label || ''
+            );
+
+        const confidence =
+            Number(
+                bestPrediction.score || 0
+            );
+
+        // =================================================
+        // CONVERT HF RESULT TO RISK SCORE
+        // =================================================
+
+        const lowerLabel =
+            label.toLowerCase();
+
+        const isPhishing =
+            lowerLabel.includes('phish') ||
+            lowerLabel.includes('scam') ||
+            lowerLabel.includes('malicious') ||
+            lowerLabel.includes('fraud') ||
+            lowerLabel === '1';
+
+        let riskScore = 0;
+
+        if (isPhishing) {
+
+            riskScore =
+                Math.round(
+                    confidence * 100
+                );
+
+        } else {
+
+            riskScore =
+                Math.round(
+                    (1 - confidence) * 40
+                );
+        }
+
+        riskScore =
+            Math.max(
+                0,
+                Math.min(
+                    100,
+                    riskScore
+                )
+            );
+
+        return {
+
+            enabled: true,
+
+            label,
+
+            confidence,
+
+            riskScore
+
+        };
+
+    } catch (error) {
+
+        console.error(
+            'Hugging Face analysis failed'
+        );
+
+        // Safe fallback
+        return {
+
+            enabled: false,
+
+            label: null,
+
+            confidence: 0,
+
+            riskScore: 0
+
+        };
+    }
+}
+
+// =====================================================
+// ANTHROPIC AI ANALYSIS
+// =====================================================
+
+async function analyzeWithAI(message) {
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+
+        return null;
+    }
+
+    try {
+
+        const response =
+            await anthropic.messages.create({
+
+                model:
+                    'claude-3-5-sonnet-latest',
+
+                max_tokens: 800,
+
+                messages: [
+
+                    {
+
+                        role: 'user',
+
+                        content: `
+You are a cybersecurity scam detection assistant.
+
+Analyze the following message and return ONLY valid JSON.
+
+Required format:
+
 {
+  "riskScore": number,
   "riskLevel": "Low" | "Medium" | "High",
-  "riskScore": 0-100,
-  "scamIndicators": ["indicator1", "indicator2", ...],
-  "manipulationTactics": ["tactic1", "tactic2", ...],
-  "suspiciousRequests": ["request1", "request2", ...],
-  "phishingRisk": "Low" | "Medium" | "High",
-  "explanation": "Detailed explanation of findings and risk assessment",
-  "safetyTips": ["tip1", "tip2", "tip3", "tip4"]
+  "reason": "short explanation",
+  "redFlags": ["red flag 1", "red flag 2"],
+  "recommendations": ["recommendation 1", "recommendation 2"]
 }
 
-Consider:
-1. Urgency language (act now, limited time, expires, etc.)
-2. Requests for sensitive info (passwords, OTPs, bank details)
-3. Unexpected rewards or prizes
-4. Suspicious links or attachments
-5. Sender spoofing or impersonation attempts
-6. Social engineering tactics
-7. Any URLs flagged as malware/social engineering`;
+Risk score:
+0-39 = Low
+40-69 = Medium
+70-100 = High
 
-		const response = await anthropic.messages.create({
-			model: 'claude-3-5-sonnet-20241022',
-			max_tokens: 1024,
-			messages: [
-				{
-					role: 'user',
-					content: analysisPrompt
-				}
-			]
-		});
+Look for:
+- OTP requests
+- Password requests
+- Bank details
+- UPI/payment requests
+- Fake rewards
+- Urgency
+- Threats
+- Account blocking
+- Suspicious links
+- KYC requests
+- Refund scams
+- Impersonation
+- Phishing
 
-		// Extract and parse the response
-		const aiResponseText = response.content[0].type === 'text' ? response.content[0].text : '';
-		console.log('[Claude AI] Raw AI response:', aiResponseText);
+Message:
 
-		// Parse JSON from response
-		let aiAnalysis;
-		try {
-			// Try to extract JSON from the response (in case there's extra text)
-			const jsonMatch = aiResponseText.match(/\{[\s\S]*\}/);
-			if (jsonMatch) {
-				aiAnalysis = JSON.parse(jsonMatch[0]);
-			} else {
-				throw new Error('No JSON found in response');
-			}
-		} catch (parseError) {
-			console.error('[Claude AI] Failed to parse AI response:', parseError.message);
-			// Return null to indicate AI analysis failed, will fallback to keyword analysis
-			return null;
-		}
+${message}
+`
+                    }
+                ]
+            });
 
-		console.log('[Claude AI] Successfully parsed AI analysis:', aiAnalysis);
-		return aiAnalysis;
-	} catch (error) {
-		console.error('[Claude AI] Error during AI analysis:', error.message);
-		console.error('[Claude AI] Error stack:', error.stack);
-		// Return null to indicate AI analysis failed, existing analysis will be used
-		return null;
-	}
+        const text =
+            response.content?.[0]?.text ||
+            '';
+
+        const cleaned =
+            text
+                .replace(/```json/gi, '')
+                .replace(/```/g, '')
+                .trim();
+
+        return JSON.parse(cleaned);
+
+    } catch (error) {
+
+        console.error(
+            'AI analysis failed'
+        );
+
+        return null;
+    }
 }
 
-const suspiciousKeywords = [
-	{ keyword: 'OTP', pattern: /\botp\b|one[- ]time\s+password/i, points: 20 },
-	{ keyword: 'password', pattern: /\bpassword\b/i, points: 20 },
-	{ keyword: 'bank', pattern: /\bbank\b/i, points: 15 },
-	{ keyword: 'account', pattern: /\baccount\b/i, points: 15 },
-	{ keyword: 'verify', pattern: /\bverify\b/i, points: 15 },
-	{ keyword: 'urgent', pattern: /\burgent\b/i, points: 12 },
-	{ keyword: 'prize', pattern: /\bprize\b/i, points: 18 },
-	{ keyword: 'winner', pattern: /\bwinner\b|\bwon\b/i, points: 18 },
-	{ keyword: 'payment', pattern: /\bpayment\b/i, points: 15 },
-	{ keyword: 'click link', pattern: /\bclick\s+(?:the\s+)?link\b/i, points: 18 }
-];
+// =====================================================
+// FALLBACK KEYWORD ANALYSIS
+// =====================================================
 
 function analyzeMessage(message) {
-	const detectedMatches = suspiciousKeywords.filter(({ pattern }) => pattern.test(message));
-	const riskScore = Math.min(100, detectedMatches.reduce((total, match) => total + match.points, 0));
-	const riskLevel = riskScore >= 60 ? 'High' : riskScore >= 30 ? 'Medium' : 'Low';
-	const detectedKeywords = detectedMatches.map(({ keyword }) => keyword);
-	
-	let explanation = '';
-	if (riskLevel === 'High') {
-		explanation = 'This message contains multiple suspicious patterns commonly found in scams. Exercise extreme caution and avoid providing any personal or financial information.';
-	} else if (riskLevel === 'Medium') {
-		explanation = 'This message contains some suspicious elements. Verify the sender and be cautious before responding or clicking links.';
-	} else {
-		explanation = 'This message appears safe based on the keywords detected, but always remain vigilant.';
-	}
-	
-	const safetyTips = riskLevel === 'High'
-		? ['Do not click links or download attachments.', 'Never share OTPs, passwords or bank details.', 'Report and delete the message immediately.', 'Contact the official organization directly if needed.']
-		: riskLevel === 'Medium'
-			? ['Verify the sender independently before responding.', 'Do not share personal or financial information.', 'Be cautious with unexpected requests.']
-			: ['Check the sender and context before responding.', 'Stay cautious with unexpected requests.', 'Verify links before clicking.'];
 
-	return { riskLevel, riskScore, detectedKeywords, explanation, safetyTips };
+    const lowerMessage =
+        message.toLowerCase();
+
+    const suspiciousKeywords = [
+
+        'otp',
+        'password',
+        'bank',
+        'account',
+        'verify',
+        'urgent',
+        'prize',
+        'winner',
+        'payment',
+        'upi',
+        'kyc',
+        'click link',
+        'refund',
+        'blocked',
+        'blocked account',
+        'claim',
+        'reward'
+
+    ];
+
+    const foundKeywords =
+        suspiciousKeywords.filter(
+            keyword =>
+                lowerMessage.includes(keyword)
+        );
+
+    let riskScore = 0;
+
+    riskScore +=
+        foundKeywords.length * 8;
+
+    if (
+        lowerMessage.includes('otp') ||
+        lowerMessage.includes('password')
+    ) {
+
+        riskScore += 20;
+    }
+
+    if (
+        lowerMessage.includes('urgent') ||
+        lowerMessage.includes('immediately') ||
+        lowerMessage.includes('now')
+    ) {
+
+        riskScore += 15;
+    }
+
+    if (
+        lowerMessage.includes('prize') ||
+        lowerMessage.includes('winner') ||
+        lowerMessage.includes('reward')
+    ) {
+
+        riskScore += 15;
+    }
+
+    if (
+        lowerMessage.includes('blocked') ||
+        lowerMessage.includes('account will be')
+    ) {
+
+        riskScore += 15;
+    }
+
+    riskScore =
+        Math.min(
+            100,
+            riskScore
+        );
+
+    let riskLevel =
+        'Low';
+
+    if (riskScore >= 70) {
+
+        riskLevel =
+            'High';
+
+    } else if (riskScore >= 40) {
+
+        riskLevel =
+            'Medium';
+    }
+
+    const recommendations = [
+
+        'Do not share OTP or passwords.',
+
+        'Do not make payments to unknown people.',
+
+        'Verify the sender independently.',
+
+        'Avoid opening suspicious links.'
+
+    ];
+
+    return {
+
+        riskScore,
+
+        riskLevel,
+
+        reason:
+            foundKeywords.length > 0
+                ? 'Suspicious keywords and scam-like patterns were detected.'
+                : 'No major scam indicators were detected.',
+
+        redFlags:
+            foundKeywords,
+
+        recommendations
+
+    };
 }
 
-app.get('/api/health', (req, res) => {
-	res.json({ status: 'API is working' });
-});
+// =====================================================
+// HEALTH CHECK
+// =====================================================
 
-app.post('/api/analyze', async (req, res) => {
-	console.log('[POST /api/analyze] Request received');
-	console.log('[POST /api/analyze] Request body:', JSON.stringify(req.body));
-	
-	const { message, url } = req.body || {};
+app.get(
+    '/api/health',
+    (req, res) => {
 
-	// Validate input
-	if (!message && !url) {
-		console.error('[POST /api/analyze] Validation failed: Neither message nor url provided');
-		return res.status(400).json({ error: 'Message or URL is required.' });
-	}
+        res.json({
 
-	try {
-		console.log('[POST /api/analyze] Processing analysis...');
-		let detectedThreats = [];
-		let urlsChecked = [];
+            status:
+                'API is working',
 
-		// Extract URLs from message if message is provided
-		if (message && typeof message === 'string' && message.trim()) {
-			const extractedURLs = extractURLs(message);
-			urlsChecked = urlsChecked.concat(extractedURLs);
-		}
+            huggingFace:
+                Boolean(
+                    process.env.HF_TOKEN
+                )
 
-		// Add URL if directly provided
-		if (url && typeof url === 'string' && url.trim()) {
-			urlsChecked.push(url.trim());
-		}
+        });
+    }
+);
 
-		// Check each URL with Google Web Risk API
-		if (urlsChecked.length > 0) {
-			for (const checkUrl of urlsChecked) {
-				try {
-					console.log(`[POST /api/analyze] Checking URL: ${checkUrl}`);
-					const apiResult = await checkURLSafety(checkUrl);
-					
-					// Extract threats from API response
-					if (apiResult.threats && apiResult.threats.length > 0) {
-						console.log(`[POST /api/analyze] Threats found for ${checkUrl}:`, apiResult.threats);
-						for (const threat of apiResult.threats) {
-							detectedThreats.push({
-								url: checkUrl,
-								threatType: threat.threatType || 'UNKNOWN'
-							});
-						}
-					} else {
-						console.log(`[POST /api/analyze] No threats found for ${checkUrl}`);
-					}
-				} catch (error) {
-					console.error(`[POST /api/analyze] Error checking URL ${checkUrl}:`, error.message);
-				}
-			}
-		}
+// =====================================================
+// HOME PAGE
+// =====================================================
 
-		// Use AI analysis if available, otherwise fallback to keyword analysis
-		let aiAnalysis = null;
-		if (message && typeof message === 'string' && message.trim()) {
-			// Try AI analysis first
-			console.log('[POST /api/analyze] Attempting AI analysis...');
-			aiAnalysis = await analyzeWithAI(message, detectedThreats);
-		}
+app.get(
+    '/',
+    (req, res) => {
 
-		// If AI analysis succeeded, use it; otherwise fallback to keyword analysis
-		let analysisResult;
-		if (aiAnalysis) {
-			console.log('[POST /api/analyze] Using AI analysis results');
-			// Map AI analysis to our response format
-			analysisResult = {
-				riskLevel: aiAnalysis.riskLevel || 'Low',
-				riskScore: aiAnalysis.riskScore || 0,
-				detectedKeywords: aiAnalysis.scamIndicators || [],
-				explanation: aiAnalysis.explanation || 'Unable to analyze message.',
-				safetyTips: aiAnalysis.safetyTips || [],
-				aiAnalyzed: true
-			};
-		} else {
-			console.log('[POST /api/analyze] AI analysis failed or unavailable, using keyword analysis');
-			// Fallback to keyword analysis
-			analysisResult = analyzeMessage(message || '');
-			analysisResult.aiAnalyzed = false;
-		}
+        res.sendFile(
+            path.join(
+                __dirname,
+                'public',
+                'index.html'
+            )
+        );
+    }
+);
 
-		// Combine external API results with analysis
-		let combinedRiskLevel = analysisResult.riskLevel;
-		let combinedRiskScore = analysisResult.riskScore;
+// =====================================================
+// MAIN ANALYZE API
+// =====================================================
 
-		// If Google Web Risk API found threats, escalate risk level
-		if (detectedThreats.length > 0) {
-			console.log('[POST /api/analyze] Escalating risk due to detected threats from Google Web Risk API');
-			combinedRiskLevel = 'High';
-			combinedRiskScore = Math.max(combinedRiskScore, 85);
-		}
+app.post(
+    '/api/analyze',
+    async (req, res) => {
 
-		// Prepare final response
-		const response = {
-			riskLevel: combinedRiskLevel,
-			riskScore: combinedRiskScore,
-			detectedKeywords: analysisResult.detectedKeywords,
-			explanation: detectedThreats.length > 0
-				? `External security check found ${detectedThreats.length} URL(s) with known threats. ${analysisResult.explanation}`
-				: analysisResult.explanation,
-			safetyTips: analysisResult.safetyTips,
-			detectedThreats: detectedThreats.length > 0 ? detectedThreats : null,
-			urlsChecked: urlsChecked.length > 0 ? urlsChecked : null,
-			aiEnhanced: analysisResult.aiAnalyzed
-		};
+        try {
 
-		console.log('[POST /api/analyze] Sending response with riskLevel:', combinedRiskLevel, 'detectedThreats:', detectedThreats.length, 'aiEnhanced:', analysisResult.aiAnalyzed);
-		res.json(response);
-	} catch (error) {
-		console.error('[POST /api/analyze] Internal server error:', error.message);
-		console.error('[POST /api/analyze] Error stack:', error.stack);
-		res.status(500).json({ error: 'Internal server error. Please try again.' });
-	}
-});
+            const message =
+                typeof req.body?.message === 'string'
+                    ? req.body.message.trim()
+                    : '';
 
-app.listen(PORT, () => {
-	console.log('════════════════════════════════════════════════');
-	console.log(`✓ Smart Scam Analyzer API running on port ${PORT}`);
-	console.log(`✓ Access at: http://localhost:${PORT}`);
-	console.log(`✓ API endpoint: http://localhost:${PORT}/api/analyze`);
-	console.log(`✓ Health check: http://localhost:${PORT}/api/health`);
-	console.log(`✓ CORS enabled for all origins`);
-	console.log('════════════════════════════════════════════════');
-});
+            if (!message) {
+
+                return res.status(400).json({
+
+                    error:
+                        'Message is required'
+
+                });
+            }
+
+            // =========================================
+            // DETECT INPUTS
+            // =========================================
+
+            const urls =
+                extractURLs(message);
+
+            const phoneNumbers =
+                extractPhoneNumbers(message);
+
+            const upiIds =
+                extractUPIIds(message);
+
+            // =========================================
+            // URL ANALYSIS
+            // =========================================
+
+            const urlResults = [];
+
+            for (const url of urls) {
+
+                const domain =
+                    getDomainFromURL(url);
+
+                const safety =
+                    await checkURLSafety(url);
+
+                const domainAge =
+                    await getDomainAge(domain);
+
+                urlResults.push({
+
+                    url,
+
+                    domain,
+
+                    safe:
+                        safety.safe,
+
+                    checked:
+                        safety.checked,
+
+                    threats:
+                        safety.threats,
+
+                    domainAge
+
+                });
+            }
+
+            // =========================================
+            // HUGGING FACE ANALYSIS
+            // =========================================
+
+            const huggingFaceAnalysis =
+                await analyzeWithHuggingFace(
+                    message
+                );
+
+            // =========================================
+            // CLAUDE AI ANALYSIS
+            // =========================================
+
+            const aiAnalysis =
+                await analyzeWithAI(
+                    message
+                );
+
+            // =========================================
+            // FALLBACK ANALYSIS
+            // =========================================
+
+            const fallbackAnalysis =
+                analyzeMessage(
+                    message
+                );
+
+            const finalAnalysis =
+                aiAnalysis ||
+                fallbackAnalysis;
+
+            // =========================================
+            // INITIAL RISK SCORE
+            // =========================================
+
+            let finalRiskScore =
+                Number(
+                    finalAnalysis.riskScore
+                ) || 0;
+
+            let finalRiskLevel =
+                finalAnalysis.riskLevel ||
+                'Low';
+
+            // =========================================
+            // HUGGING FACE RISK
+            // =========================================
+
+            if (
+                huggingFaceAnalysis.enabled
+            ) {
+
+                /*
+                  Combine Claude/fallback
+                  score with Hugging Face.
+
+                  HF gets 40% weight.
+                  Existing analysis gets 60%.
+                */
+
+                finalRiskScore =
+                    Math.round(
+
+                        (
+                            finalRiskScore *
+                            0.60
+                        ) +
+
+                        (
+                            huggingFaceAnalysis.riskScore *
+                            0.40
+                        )
+                    );
+            }
+
+            // =========================================
+            // LIVE URL THREATS
+            // =========================================
+
+            const detectedThreats =
+                urlResults.flatMap(
+                    item =>
+                        item.threats || []
+                );
+
+            // Known dangerous URL
+            if (
+                detectedThreats.length > 0
+            ) {
+
+                finalRiskScore =
+                    Math.max(
+                        finalRiskScore,
+                        90
+                    );
+
+                finalRiskLevel =
+                    'High';
+            }
+
+            // URL detected
+            if (
+                urls.length > 0 &&
+                detectedThreats.length === 0
+            ) {
+
+                finalRiskScore =
+                    Math.max(
+                        finalRiskScore,
+                        20
+                    );
+            }
+
+            // UPI detected
+            if (
+                upiIds.length > 0
+            ) {
+
+                finalRiskScore =
+                    Math.max(
+                        finalRiskScore,
+                        25
+                    );
+            }
+
+            // Phone detected
+            if (
+                phoneNumbers.length > 0
+            ) {
+
+                finalRiskScore =
+                    Math.max(
+                        finalRiskScore,
+                        20
+                    );
+            }
+
+            // =========================================
+            // FINAL SCORE LIMIT
+            // =========================================
+
+            finalRiskScore =
+                Math.min(
+                    100,
+                    Math.max(
+                        0,
+                        finalRiskScore
+                    )
+                );
+
+            // =========================================
+            // FINAL RISK LEVEL
+            // =========================================
+
+            if (
+                finalRiskScore >= 70
+            ) {
+
+                finalRiskLevel =
+                    'High';
+
+            } else if (
+                finalRiskScore >= 40
+            ) {
+
+                finalRiskLevel =
+                    'Medium';
+
+            } else {
+
+                finalRiskLevel =
+                    'Low';
+            }
+
+            // =========================================
+            // RESPONSE
+            // =========================================
+
+            return res.json({
+
+                success: true,
+
+                riskScore:
+                    finalRiskScore,
+
+                riskLevel:
+                    finalRiskLevel,
+
+                reason:
+                    finalAnalysis.reason ||
+                    'No detailed explanation available.',
+
+                redFlags:
+                    finalAnalysis.redFlags ||
+                    [],
+
+                recommendations:
+                    finalAnalysis.recommendations ||
+                    [],
+
+                // Hugging Face result
+                huggingFace: {
+
+                    enabled:
+                        huggingFaceAnalysis.enabled,
+
+                    model:
+                        HF_MODEL,
+
+                    label:
+                        huggingFaceAnalysis.label,
+
+                    confidence:
+                        huggingFaceAnalysis.confidence,
+
+                    confidencePercent:
+                        Math.round(
+                            (
+                                huggingFaceAnalysis.confidence ||
+                                0
+                            ) * 100
+                        ),
+
+                    riskScore:
+                        huggingFaceAnalysis.riskScore
+
+                },
+
+                detected: {
+
+                    urls,
+
+                    phoneNumbers,
+
+                    upiIds
+
+                },
+
+                urlResults,
+
+                privacy:
+                    'No data is stored permanently. No login required.'
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                'Analyze API error'
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                error:
+                    'Unable to analyze the message.'
+
+            });
+        }
+    }
+);
+
+// =====================================================
+// START SERVER
+// =====================================================
+
+app.listen(
+    PORT,
+    () => {
+
+        console.log(
+            `Smart Scam Analyzer running on http://localhost:${PORT}`
+        );
+
+    }
+);

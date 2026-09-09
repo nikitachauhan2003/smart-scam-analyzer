@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.9",
+    "@huggingface/inference": "^4.13.28",
     "cores": "^0.8.5",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
