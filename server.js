@@ -26,7 +26,6 @@ const hfClient = process.env.HF_TOKEN
     ? new InferenceClient(process.env.HF_TOKEN)
     : null;
 
-// Phishing / scam text classification model
 const HF_MODEL =
     'ealvaradob/bert-finetuned-phishing';
 
@@ -119,92 +118,192 @@ function getDomainAge(domain) {
     return new Promise((resolve) => {
 
         if (!domain) {
-
             resolve(null);
-
             return;
         }
 
-        const url =
-            `https://rdap.org/domain/${encodeURIComponent(domain)}`;
+        function requestRDAP(url, redirects = 0) {
 
-        https.get(url, (res) => {
+            if (redirects > 5) {
+                console.error(
+                    `Too many RDAP redirects for ${domain}`
+                );
 
-            let data = '';
+                resolve(null);
+                return;
+            }
 
-            res.on('data', chunk => {
+            https.get(
+                url,
+                {
+                    headers: {
+                        'User-Agent':
+                            'Smart-Scam-Analyzer/1.0',
 
-                data += chunk;
+                        'Accept':
+                            'application/rdap+json, application/json'
+                    }
+                },
+                (res) => {
 
-            });
+                    // =====================================
+                    // FOLLOW REDIRECT
+                    // =====================================
 
-            res.on('end', () => {
+                    if (
+                        res.statusCode >= 300 &&
+                        res.statusCode < 400 &&
+                        res.headers.location
+                    ) {
 
-                try {
+                        const redirectURL =
+                            new URL(
+                                res.headers.location,
+                                url
+                            ).toString();
 
-                    const result =
-                        JSON.parse(data);
+                        res.resume();
 
-                    const events =
-                        result.events || [];
-
-                    const registrationEvent =
-                        events.find(
-                            event =>
-                                event.eventAction ===
-                                'registration'
+                        requestRDAP(
+                            redirectURL,
+                            redirects + 1
                         );
-
-                    if (!registrationEvent) {
-
-                        resolve(null);
 
                         return;
                     }
 
-                    const registrationDate =
-                        new Date(
-                            registrationEvent.eventDate
-                        );
+                    let data = '';
 
-                    const now =
-                        new Date();
+                    res.on(
+                        'data',
+                        chunk => {
+                            data += chunk;
+                        }
+                    );
 
-                    const ageDays =
-                        Math.floor(
-                            (now - registrationDate) /
-                            (1000 * 60 * 60 * 24)
-                        );
+                    res.on(
+                        'end',
+                        () => {
 
-                    const ageYears =
-                        Math.floor(
-                            ageDays / 365
-                        );
+                            if (res.statusCode !== 200) {
 
-                    resolve({
+                                console.error(
+                                    `RDAP failed for ${domain}: HTTP ${res.statusCode}`
+                                );
 
-                        registrationDate:
-                            registrationDate.toISOString(),
+                                resolve(null);
+                                return;
+                            }
 
-                        ageDays,
+                            try {
 
-                        ageYears
+                                const result =
+                                    JSON.parse(data);
 
-                    });
+                                const events =
+                                    Array.isArray(
+                                        result.events
+                                    )
+                                        ? result.events
+                                        : [];
 
-                } catch (error) {
+                                const registrationEvent =
+                                    events.find(
+                                        event =>
+                                            event.eventAction ===
+                                            'registration'
+                                    );
+
+                                if (
+                                    !registrationEvent ||
+                                    !registrationEvent.eventDate
+                                ) {
+
+                                    resolve(null);
+                                    return;
+                                }
+
+                                const registrationDate =
+                                    new Date(
+                                        registrationEvent.eventDate
+                                    );
+
+                                if (
+                                    isNaN(
+                                        registrationDate.getTime()
+                                    )
+                                ) {
+
+                                    resolve(null);
+                                    return;
+                                }
+
+                                const now =
+                                    new Date();
+
+                                const ageDays =
+                                    Math.floor(
+                                        (
+                                            now -
+                                            registrationDate
+                                        ) /
+                                        (
+                                            1000 *
+                                            60 *
+                                            60 *
+                                            24
+                                        )
+                                    );
+
+                                const ageYears =
+                                    Math.floor(
+                                        ageDays / 365
+                                    );
+
+                                resolve({
+
+                                    registrationDate:
+                                        registrationDate.toISOString(),
+
+                                    ageDays,
+
+                                    ageYears,
+
+                                    registered: true
+
+                                });
+
+                            } catch (error) {
+
+                                console.error(
+                                    `RDAP JSON error for ${domain}`
+                                );
+
+                                resolve(null);
+                            }
+                        }
+                    );
+                }
+            ).on(
+                'error',
+                () => {
+
+                    console.error(
+                        `RDAP request failed for ${domain}`
+                    );
 
                     resolve(null);
                 }
-            });
+            );
+        }
 
-        }).on('error', () => {
+        const rdapURL =
+            `https://rdap.org/domain/${encodeURIComponent(domain)}`;
 
-            resolve(null);
-
-        });
+        requestRDAP(rdapURL);
     });
 }
+                    
 
 // =====================================================
 // GOOGLE WEB RISK CHECK
@@ -238,65 +337,74 @@ function checkURLSafety(url) {
             `&threatTypes=MALWARE` +
             `&threatTypes=SOCIAL_ENGINEERING`;
 
-        https.get(apiURL, (res) => {
+        https.get(
+            apiURL,
+            (res) => {
 
-            let data = '';
+                let data = '';
 
-            res.on('data', chunk => {
+                res.on(
+                    'data',
+                    chunk => {
+                        data += chunk;
+                    }
+                );
 
-                data += chunk;
+                res.on(
+                    'end',
+                    () => {
 
-            });
+                        try {
 
-            res.on('end', () => {
+                            const result =
+                                JSON.parse(data);
 
-                try {
+                            const threats =
+                                result.threat ||
+                                result.threatTypes ||
+                                [];
 
-                    const result =
-                        JSON.parse(data);
+                            resolve({
 
-                    const threats =
-                        result.threat ||
-                        result.threatTypes ||
-                        [];
+                                safe:
+                                    threats.length === 0,
 
-                    resolve({
+                                checked: true,
 
-                        safe:
-                            threats.length === 0,
+                                threats
 
-                        checked: true,
+                            });
 
-                        threats
+                        } catch (error) {
 
-                    });
+                            resolve({
 
-                } catch (error) {
+                                safe: true,
 
-                    resolve({
+                                checked: false,
 
-                        safe: true,
+                                threats: []
 
-                        checked: false,
+                            });
+                        }
+                    }
+                );
+            }
+        ).on(
+            'error',
+            () => {
 
-                        threats: []
+                resolve({
 
-                    });
-                }
-            });
+                    safe: true,
 
-        }).on('error', () => {
+                    checked: false,
 
-            resolve({
+                    threats: []
 
-                safe: true,
-
-                checked: false,
-
-                threats: []
-
-            });
-        });
+                });
+            }
+        );
     });
 }
 
@@ -306,7 +414,6 @@ function checkURLSafety(url) {
 
 async function analyzeWithHuggingFace(message) {
 
-    // No token = fallback
     if (!hfClient) {
 
         return {
@@ -333,20 +440,6 @@ async function analyzeWithHuggingFace(message) {
 
             });
 
-        /*
-          Depending on the model/provider,
-          output can be an array like:
-
-          [
-            {
-              label: "phishing",
-              score: 0.98
-            }
-          ]
-
-          or nested arrays.
-        */
-
         let predictions = result;
 
         if (
@@ -354,7 +447,8 @@ async function analyzeWithHuggingFace(message) {
             Array.isArray(result[0])
         ) {
 
-            predictions = result[0];
+            predictions =
+                result[0];
         }
 
         if (
@@ -375,7 +469,6 @@ async function analyzeWithHuggingFace(message) {
             };
         }
 
-        // Highest confidence prediction
         const bestPrediction =
             [...predictions].sort(
                 (a, b) =>
@@ -392,10 +485,6 @@ async function analyzeWithHuggingFace(message) {
             Number(
                 bestPrediction.score || 0
             );
-
-        // =================================================
-        // CONVERT HF RESULT TO RISK SCORE
-        // =================================================
 
         const lowerLabel =
             label.toLowerCase();
@@ -448,10 +537,10 @@ async function analyzeWithHuggingFace(message) {
     } catch (error) {
 
         console.error(
-            'Hugging Face analysis failed'
+            'Hugging Face analysis failed:',
+            error.message
         );
 
-        // Safe fallback
         return {
 
             enabled: false,
@@ -542,8 +631,14 @@ ${message}
 
         const cleaned =
             text
-                .replace(/```json/gi, '')
-                .replace(/```/g, '')
+                .replace(
+                    /```json/gi,
+                    ''
+                )
+                .replace(
+                    /```/g,
+                    ''
+                )
                 .trim();
 
         return JSON.parse(cleaned);
@@ -551,7 +646,8 @@ ${message}
     } catch (error) {
 
         console.error(
-            'AI analysis failed'
+            'AI analysis failed:',
+            error.message
         );
 
         return null;
@@ -592,7 +688,9 @@ function analyzeMessage(message) {
     const foundKeywords =
         suspiciousKeywords.filter(
             keyword =>
-                lowerMessage.includes(keyword)
+                lowerMessage.includes(
+                    keyword
+                )
         );
 
     let riskScore = 0;
@@ -628,7 +726,9 @@ function analyzeMessage(message) {
 
     if (
         lowerMessage.includes('blocked') ||
-        lowerMessage.includes('account will be')
+        lowerMessage.includes(
+            'account will be'
+        )
     ) {
 
         riskScore += 15;
@@ -852,14 +952,6 @@ app.post(
                 huggingFaceAnalysis.enabled
             ) {
 
-                /*
-                  Combine Claude/fallback
-                  score with Hugging Face.
-
-                  HF gets 40% weight.
-                  Existing analysis gets 60%.
-                */
-
                 finalRiskScore =
                     Math.round(
 
@@ -885,7 +977,6 @@ app.post(
                         item.threats || []
                 );
 
-            // Known dangerous URL
             if (
                 detectedThreats.length > 0
             ) {
@@ -900,7 +991,10 @@ app.post(
                     'High';
             }
 
-            // URL detected
+            // =========================================
+            // URL DETECTED
+            // =========================================
+
             if (
                 urls.length > 0 &&
                 detectedThreats.length === 0
@@ -913,7 +1007,10 @@ app.post(
                     );
             }
 
-            // UPI detected
+            // =========================================
+            // UPI DETECTED
+            // =========================================
+
             if (
                 upiIds.length > 0
             ) {
@@ -925,7 +1022,10 @@ app.post(
                     );
             }
 
-            // Phone detected
+            // =========================================
+            // PHONE DETECTED
+            // =========================================
+
             if (
                 phoneNumbers.length > 0
             ) {
@@ -938,7 +1038,7 @@ app.post(
             }
 
             // =========================================
-            // FINAL SCORE LIMIT
+            // FINAL SCORE
             // =========================================
 
             finalRiskScore =
@@ -978,7 +1078,7 @@ app.post(
             // RESPONSE
             // =========================================
 
-            return res.json({
+            res.json({
 
                 success: true,
 
@@ -989,18 +1089,26 @@ app.post(
                     finalRiskLevel,
 
                 reason:
-                    finalAnalysis.reason ||
-                    'No detailed explanation available.',
+                    finalAnalysis.reason,
 
                 redFlags:
-                    finalAnalysis.redFlags ||
-                    [],
+                    finalAnalysis.redFlags || [],
 
                 recommendations:
-                    finalAnalysis.recommendations ||
-                    [],
+                    finalAnalysis.recommendations || [],
 
-                // Hugging Face result
+                detected: {
+
+                    urls,
+
+                    phoneNumbers,
+
+                    upiIds
+
+                },
+
+                urlResults,
+
                 huggingFace: {
 
                     enabled:
@@ -1028,18 +1136,6 @@ app.post(
 
                 },
 
-                detected: {
-
-                    urls,
-
-                    phoneNumbers,
-
-                    upiIds
-
-                },
-
-                urlResults,
-
                 privacy:
                     'No data is stored permanently. No login required.'
 
@@ -1048,10 +1144,11 @@ app.post(
         } catch (error) {
 
             console.error(
-                'Analyze API error'
+                'Analyze API error:',
+                error.message
             );
 
-            return res.status(500).json({
+            res.status(500).json({
 
                 success: false,
 
@@ -1072,7 +1169,7 @@ app.listen(
     () => {
 
         console.log(
-            `Smart Scam Analyzer running on http://localhost:${PORT}`
+            `Smart Scam Analyzer running on port ${PORT}`
         );
 
     }
